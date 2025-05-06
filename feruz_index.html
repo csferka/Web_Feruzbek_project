@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Movie Database Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .btn-add {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .btn-delete {
+            background-color: #f44336;
+            color: white;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 50%;
+            border-radius: 5px;
+        }
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: black;
+        }
+        .actions {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1>Movie Database Manager</h1>
+
+    <div style="text-align: center; margin-bottom: 10px;">
+        <span id="connectionStatus">Checking API connection...</span>
+    </div>
+
+    <div class="actions">
+        <button id="addMovieBtn" class="btn btn-add">Add New Movie</button>
+        <button id="deleteSelectedBtn" class="btn btn-delete" disabled>Delete Selected</button>
+        <button id="retryConnectionBtn" class="btn" style="background-color: #2196F3; color: white;">Retry Connection</button>
+    </div>
+
+    <table id="movieTable">
+        <thead>
+            <tr>
+                <th><input type="checkbox" id="selectAll"></th>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Distributor</th>
+                <th>Release Date</th>
+                <th>Budget (Millions)</th>
+                <th>Opening Weekend</th>
+                <th>North America</th>
+                <th>Other Territories</th>
+                <th>Worldwide</th>
+            </tr>
+        </thead>
+        <tbody id="movieTableBody">
+            <!-- Movie data will be loaded here -->
+        </tbody>
+    </table>
+
+    <!-- Add Movie Modal -->
+    <div id="addMovieModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Add New Movie</h2>
+            <form id="addMovieForm">
+                <div class="form-group">
+                    <label for="title">Title:</label>
+                    <input type="text" id="title" name="title" required>
+                </div>
+                <div class="form-group">
+                    <label for="distributor">Distributor:</label>
+                    <input type="text" id="distributor" name="distributor" required>
+                </div>
+                <div class="form-group">
+                    <label for="release_date">Release Date:</label>
+                    <input type="date" id="release_date" name="release_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="budget_millions">Budget (Millions):</label>
+                    <input type="number" id="budget_millions" name="budget_millions" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="opening_weekend">Opening Weekend:</label>
+                    <input type="number" id="opening_weekend" name="opening_weekend" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="north_america">North America:</label>
+                    <input type="number" id="north_america" name="north_america" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="other_territories">Other Territories:</label>
+                    <input type="number" id="other_territories" name="other_territories" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="worldwide">Worldwide:</label>
+                    <input type="number" id="worldwide" name="worldwide" step="0.01" required>
+                </div>
+                <button type="submit" class="btn btn-add">Add Movie</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_URL = 'http://43.201.43.164:5000/api';  // Your EC2 instance public IP
+
+        // Test API connection on page load
+        async function testApiConnection() {
+            try {
+                const response = await fetch(`${API_URL}/test`);
+                if (response.ok) {
+                    console.log('✅ API connection successful');
+                    document.getElementById('connectionStatus').textContent = 'Connected to API';
+                    document.getElementById('connectionStatus').style.color = 'green';
+                    return true;
+                } else {
+                    throw new Error('API responded with an error');
+                }
+            } catch (error) {
+                console.error('❌ API connection failed:', error);
+                document.getElementById('connectionStatus').textContent = 'API Connection Failed';
+                document.getElementById('connectionStatus').style.color = 'red';
+                return false;
+            }
+        }
+
+        // DOM Elements
+        const movieTableBody = document.getElementById('movieTableBody');
+        const addMovieBtn = document.getElementById('addMovieBtn');
+        const deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
+        const addMovieModal = document.getElementById('addMovieModal');
+        const addMovieForm = document.getElementById('addMovieForm');
+        const selectAllCheckbox = document.getElementById('selectAll');
+        const closeModalBtn = document.querySelector('.close');
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', async () => {
+            const isConnected = await testApiConnection();
+            if (isConnected) {
+                loadMovies();
+            } else {
+                movieTableBody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: red;">Failed to connect to API. Check server status.</td></tr>';
+            }
+        });
+
+        document.getElementById('retryConnectionBtn').addEventListener('click', async () => {
+            const isConnected = await testApiConnection();
+            if (isConnected) {
+                loadMovies();
+            }
+        });
+
+        addMovieBtn.addEventListener('click', openAddMovieModal);
+        closeModalBtn.addEventListener('click', closeAddMovieModal);
+        addMovieForm.addEventListener('submit', addMovie);
+        deleteSelectedBtn.addEventListener('click', deleteSelectedMovies);
+        selectAllCheckbox.addEventListener('change', toggleSelectAll);
+
+        // Fetch all movies from the API
+        async function loadMovies() {
+            try {
+                document.getElementById('movieTableBody').innerHTML = '<tr><td colspan="10" style="text-align: center;">Loading movies...</td></tr>';
+
+                const response = await fetch(`${API_URL}/movies`);
+                console.log('Movies API Response status:', response.status);
+                const data = await response.json();
+                console.log('Movies API Response data:', data);
+
+                if (response.ok) {
+                    displayMovies(data.movies);
+                } else {
+                    console.error('Failed to load movies:', data.error);
+                    document.getElementById('movieTableBody').innerHTML =
+                        `<tr><td colspan="10" style="text-align: center; color: red;">
+                            Error: ${data.error || 'Unknown error'}<br>
+                            <small>Status: ${response.status}</small>
+                        </td></tr>`;
+                }
+            } catch (error) {
+                console.error('Error loading movies:', error);
+                document.getElementById('movieTableBody').innerHTML =
+                    `<tr><td colspan="10" style="text-align: center; color: red;">
+                        Connection Error: ${error.message}<br>
+                        <small>Check that your Flask API is running and accessible</small>
+                    </td></tr>`;
+            }
+        }
+
+        // Display movies in the table
+        function displayMovies(movies) {
+            movieTableBody.innerHTML = '';
+
+            if (movies.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = '<td colspan="10" style="text-align: center;">No movies found</td>';
+                movieTableBody.appendChild(row);
+                return;
+            }
+
+            movies.forEach(movie => {
+                const row = document.createElement('tr');
+                // Store the movie identifier (either ID or title) for deletion
+                const movieIdentifier = movie.id || movie.title;
+                console.log(`Movie: ${movie.title}, Identifier: ${movieIdentifier}`);
+
+                row.innerHTML = `
+                    <td><input type="checkbox" class="movie-select" data-id="${movieIdentifier}"></td>
+                    <td>${movie.id || 'N/A'}</td>
+                    <td>${movie.title}</td>
+                    <td>${movie.distributor}</td>
+                    <td>${formatDate(movie.release_date)}</td>
+                    <td>${movie.budget_millions}</td>
+                    <td>${movie.opening_weekend}</td>
+                    <td>${movie.north_america}</td>
+                    <td>${movie.other_territories}</td>
+                    <td>${movie.worldwide}</td>
+                `;
+                movieTableBody.appendChild(row);
+            });
+
+            // Add event listeners to checkboxes
+            document.querySelectorAll('.movie-select').forEach(checkbox => {
+                checkbox.addEventListener('change', updateDeleteButton);
+            });
+        }
+
+        // Format date for display
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toISOString().split('T')[0];
+        }
+
+        // Open the add movie modal
+        function openAddMovieModal() {
+            addMovieModal.style.display = 'block';
+        }
+
+        // Close the add movie modal
+        function closeAddMovieModal() {
+            addMovieModal.style.display = 'none';
+            addMovieForm.reset();
+        }
+
+        // Add a new movie
+        async function addMovie(event) {
+            event.preventDefault();
+
+            const formData = new FormData(addMovieForm);
+            const movieData = {
+                title: formData.get('title'),
+                distributor: formData.get('distributor'),
+                release_date: formData.get('release_date'),
+                budget_millions: parseFloat(formData.get('budget_millions')),
+                opening_weekend: parseFloat(formData.get('opening_weekend')),
+                north_america: parseFloat(formData.get('north_america')),
+                other_territories: parseFloat(formData.get('other_territories')),
+                worldwide: parseFloat(formData.get('worldwide'))
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/movies`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(movieData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert('Movie added successfully!');
+                    closeAddMovieModal();
+                    loadMovies();
+                } else {
+                    alert(`Failed to add movie: ${data.error}`);
+                }
+            } catch (error) {
+                console.error('Error adding movie:', error);
+                alert('Error connecting to the server. Please try again later.');
+            }
+        }
+
+        // Delete selected movies
+        async function deleteSelectedMovies() {
+            const selectedMovies = document.querySelectorAll('.movie-select:checked');
+
+            if (selectedMovies.length === 0) {
+                alert('No movies selected for deletion');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete ${selectedMovies.length} movie(s)?`)) {
+                return;
+            }
+
+            let successCount = 0;
+            let errorCount = 0;
+            let errorMessages = [];
+
+            // Show loading state
+            selectedMovies.forEach(checkbox => {
+                const row = checkbox.closest('tr');
+                row.style.backgroundColor = '#fffde7'; // Light yellow to indicate processing
+            });
+
+            for (const checkbox of selectedMovies) {
+                const movieId = checkbox.dataset.id;
+                const movieTitle = checkbox.closest('tr').children[2].textContent; // Title is in the 3rd column
+
+                console.log(`Attempting to delete: ID=${movieId}, Title=${movieTitle}`);
+
+                try {
+                    // For debugging, log the exact URL we're calling
+                    const deleteUrl = `${API_URL}/movies/${encodeURIComponent(movieId)}`;
+                    console.log(`DELETE request to: ${deleteUrl}`);
+
+                    const response = await fetch(deleteUrl, {
+                        method: 'DELETE'
+                    });
+
+                    console.log(`Response status: ${response.status}`);
+                    const data = await response.json();
+                    console.log('Response data:', data);
+
+                    if (response.ok) {
+                        successCount++;
+                        checkbox.closest('tr').style.backgroundColor = '#e8f5e9'; // Light green for success
+                    } else {
+                        errorCount++;
+                        errorMessages.push(`Failed to delete "${movieTitle}": ${data.error}`);
+                        checkbox.closest('tr').style.backgroundColor = '#ffebee'; // Light red for error
+                    }
+                } catch (error) {
+                    console.error(`Error deleting movie:`, error);
+                    errorCount++;
+                    errorMessages.push(`Network error deleting "${movieTitle}": ${error.message}`);
+                    checkbox.closest('tr').style.backgroundColor = '#ffebee'; // Light red for error
+                }
+            }
+
+            // Report results
+            if (errorCount === 0) {
+                alert(`Successfully deleted ${successCount} movie(s)!`);
+                loadMovies(); // Refresh the movie list
+            } else {
+                alert(`Deleted ${successCount} movie(s), but encountered ${errorCount} error(s):\n\n${errorMessages.join('\n')}`);
+                if (successCount > 0) {
+                    loadMovies(); // Refresh if at least some were successful
+                }
+            }
+        }
+
+        // Update delete button state based on selection
+        function updateDeleteButton() {
+            const selectedMovies = document.querySelectorAll('.movie-select:checked');
+            deleteSelectedBtn.disabled = selectedMovies.length === 0;
+        }
+
+        // Toggle select all checkboxes
+        function toggleSelectAll() {
+            const isChecked = selectAllCheckbox.checked;
+            document.querySelectorAll('.movie-select').forEach(checkbox => {
+                checkbox.checked = isChecked;
+            });
+            updateDeleteButton();
+        }
+
+        // Close modal when clicking outside of it
+        window.onclick = function(event) {
+            if (event.target === addMovieModal) {
+                closeAddMovieModal();
+            }
+        };
+    </script>
+</body>
+</html>
